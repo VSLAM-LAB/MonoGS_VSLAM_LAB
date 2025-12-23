@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import trimesh
 from PIL import Image
+import pandas as pd
 
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
@@ -15,6 +16,37 @@ try:
 except Exception:
     pass
 
+class VSLAMLABMONOParser:
+    def __init__(self, input_folder, rgb_csv, cam_name):
+        self.input_folder = input_folder
+        self.load_rgb(self.input_folder, rgb_csv, cam_name)
+        self.n_img = len(self.color_paths)
+
+    def load_rgb(self, datapath, rgb_csv, cam_name):
+        df = pd.read_csv(rgb_csv)       
+        image_list = df[f'path_{cam_name}'].to_list()
+
+        self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
+        for data in image_list:
+            self.color_paths += [os.path.join(datapath, data)]
+
+class VSLAMLABRGBDParser:
+    def __init__(self, input_folder, rgb_csv, cam_name, depth_name):
+        self.input_folder = input_folder
+        self.load_images(self.input_folder, rgb_csv, cam_name, depth_name)
+        self.n_img = len(self.color_paths)
+
+    def load_images(self, datapath, rgb_csv, cam_name, depth_name):
+        df = pd.read_csv(rgb_csv)       
+        image_list = df[f'path_{cam_name}'].to_list()
+        depth_list = df[f'path_{depth_name}'].to_list()
+
+        self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
+        for data in image_list:
+            self.color_paths += [os.path.join(datapath, data)]
+
+        for data in depth_list:
+            self.depth_paths += [os.path.join(datapath, data)]
 
 class ReplicaParser:
     def __init__(self, input_folder):
@@ -392,7 +424,70 @@ class StereoDataset(BaseDataset):
 
         return image, depth, pose
 
+class VSLAMLABDatasetMono(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        rgb_csv = config["Dataset"]["rgb_csv"]
+        cam_name = config["Dataset"]["cam_mono"]
+        parser = VSLAMLABMONOParser(dataset_path, rgb_csv, cam_name)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
 
+    def __getitem__(self, idx):
+        color_path = self.color_paths[idx]
+        img_pil = Image.open(color_path).convert("RGB")
+        image = np.array(img_pil)
+        pose = torch.eye(4, device=self.device, dtype=self.dtype)
+        depth = None
+
+        if self.disorted:
+            image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+
+        image = (
+            torch.from_numpy(image / 255.0)
+            .clamp(0.0, 1.0)
+            .permute(2, 0, 1)
+            .to(device=self.device, dtype=self.dtype)
+        )
+
+        return image, depth, pose
+
+class VSLAMLABDatasetRGBD(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        rgb_csv = config["Dataset"]["rgb_csv"]
+        cam_name = config["Dataset"]["cam_rgbd"]
+        depth_name = config["Dataset"]["depth_name"]
+        parser = VSLAMLABRGBDParser(dataset_path, rgb_csv, cam_name, depth_name)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.depth_paths = parser.depth_paths
+
+    def __getitem__(self, idx):
+        color_path = self.color_paths[idx]
+        img_pil = Image.open(color_path).convert("RGB")
+        image = np.array(img_pil)
+        pose = torch.eye(4, device=self.device, dtype=self.dtype)
+        depth = None
+        
+        if self.disorted:
+            image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+
+        if self.has_depth:
+            depth_path = self.depth_paths[idx]
+            depth = np.array(Image.open(depth_path)) / self.depth_scale
+
+        image = (
+            torch.from_numpy(image / 255.0)
+            .clamp(0.0, 1.0)
+            .permute(2, 0, 1)
+            .to(device=self.device, dtype=self.dtype)
+        )
+
+        return image, depth, pose
+    
 class TUMDataset(MonocularDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
@@ -528,5 +623,9 @@ def load_dataset(args, path, config):
         return EurocDataset(args, path, config)
     elif config["Dataset"]["type"] == "realsense":
         return RealsenseDataset(args, path, config)
+    elif config["Dataset"]["type"] == "vslamlab_mono":
+        return VSLAMLABDatasetMono(args, path, config)
+    elif config["Dataset"]["type"] == "vslamlab_rgbd":
+        return VSLAMLABDatasetRGBD(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
