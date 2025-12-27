@@ -2,8 +2,8 @@ inherit_from: "configs/vslamlab/base_config.yaml"
 
 Dataset:
   dataset_path: ""
-  cam_mono: "rgb0"
-  cam_rgbd: "rgb0"
+  cam_mono: "rgb_0"
+  cam_rgbd: "rgb_0"
   Calibration:
     fx: 0.0
     fy: 0.0
