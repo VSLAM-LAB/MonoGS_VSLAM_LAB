@@ -3,8 +3,10 @@ import os
 
 import cv2
 import evo
+import csv
 import numpy as np
 import torch
+import pandas as pd
 from evo.core import metrics, trajectory
 from evo.core.metrics import PoseRelation, Unit
 from evo.core.trajectory import PosePath3D, PoseTrajectory3D
@@ -22,7 +24,7 @@ from gaussian_splatting.utils.loss_utils import ssim
 from gaussian_splatting.utils.system_utils import mkdir_p
 from utils.logging_utils import Log
 
-def write_tum_trajectory(frames, kf_ids, exp_folder, exp_id, sequence_path):
+def write_vslamlab_trajectory(frames, kf_ids, exp_folder, exp_id, rgb_csv, cam_name):
 
     def gen_pose_matrix(R, T):
         pose = np.eye(4)
@@ -30,15 +32,13 @@ def write_tum_trajectory(frames, kf_ids, exp_folder, exp_id, sequence_path):
         pose[0:3, 3] = T.cpu().numpy()
         return pose
 
-    rgb_txt = os.path.join(sequence_path, 'rgb.txt')
-    rgb_timestamps = []
-    with open(rgb_txt, 'r') as file:
-        for line in file:
-            timestamp, path, *extra = line.strip().split(' ')
-            rgb_timestamps.append(float(timestamp))
+    df = pd.read_csv(rgb_csv)       
+    timestamps = df[f'ts_{cam_name} (ns)'].to_list()
 
-    traj_txt = os.path.join(exp_folder, exp_id.zfill(5) + "_KeyFrameTrajectory.txt")
-    with open(traj_txt, 'w') as file:
+    keyframe_csv = os.path.join(exp_folder, exp_id.zfill(5) + "_KeyFrameTrajectory.csv")
+    with open(keyframe_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["ts (ns)", "tx (m)", "ty (m)", "tz (m)", "qx", "qy", "qz", "qw"])
         for kf_id in kf_ids:
             kf = frames[kf_id]
             pose_est = np.linalg.inv(gen_pose_matrix(kf.R, kf.T))
@@ -47,10 +47,9 @@ def write_tum_trajectory(frames, kf_ids, exp_folder, exp_id, sequence_path):
             R = pose_est[:3, :3]
             q = Rot.from_matrix(R).as_quat()
             qx, qy, qz, qw = q
-            ts = rgb_timestamps[kf_id]
-            line = str(ts) + " " + str(tx) + " " + str(ty) + " " + str(tz) + " " + str(qx) + " " + str(qy) + " " + str(qz) + " " + str(qw) + "\n"
-            file.write(line)
-            
+            ts = timestamps[kf_id]
+            writer.writerow([ts, tx, ty, tz, qx, qy, qz, qw])
+              
 def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     ## Plot
     traj_ref = PosePath3D(poses_se3=poses_gt)

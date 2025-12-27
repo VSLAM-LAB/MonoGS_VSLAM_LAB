@@ -15,7 +15,7 @@ from gaussian_splatting.utils.system_utils import mkdir_p
 from gui import gui_utils, slam_gui
 from utils.config_utils import load_config
 from utils.dataset import load_dataset
-from utils.eval_utils import eval_ate, eval_rendering, save_gaussians, write_tum_trajectory
+from utils.eval_utils import eval_ate, eval_rendering, save_gaussians, write_vslamlab_trajectory
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import FakeQueue
 from utils.slam_backend import BackEnd
@@ -118,9 +118,9 @@ class SLAM:
         Log("Total time", start.elapsed_time(end) * 0.001, tag="Eval")
         Log("Total FPS", N_frames / (start.elapsed_time(end) * 0.001), tag="Eval")
 
-        write_tum_trajectory(self.frontend.cameras, self.frontend.kf_indices,
-                             config["Results"]['save_dir'], config["Results"]['exp_id'],
-                             config["Dataset"]['dataset_path'])
+        write_vslamlab_trajectory(self.frontend.cameras, self.frontend.kf_indices,
+                             config["Results"]['save_dir'], config["Results"]['exp_id'],                    
+                             config["Dataset"]["rgb_csv"], config["Dataset"]["cam_mono"])
 
         if self.eval_rendering:
             self.gaussians = self.frontend.gaussians
